@@ -1,2 +1,2 @@
-# triangularaveragefuzzyfilter_finalyearproject
+# triangular_average_fuzzyfilter_final_year_project
 Final year project on image processing
