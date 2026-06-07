@@ -1,0 +1,339 @@
+import cv2
+import numpy as np
+from matplotlib import pyplot as plt
+from PIL import Image
+from google.colab import files
+from scipy.ndimage import uniform_filter
+
+uploaded = files.upload()
+image_path = list(uploaded.keys())[0]
+img = cv2.imread(image_path)
+img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+
+def triangular_fuzzy_filter_fast(image, kernel_size=3):
+    pad = kernel_size // 2
+
+    xmav = uniform_filter(image.astype(np.float32), size=(kernel_size, kernel_size, 1))
+
+    min_filter = np.zeros_like(image, dtype=np.float32)
+    max_filter = np.zeros_like(image, dtype=np.float32)
+
+    for ch in range(image.shape[2]):
+        min_filter[:, :, ch] = cv2.erode(image[:, :, ch], np.ones((kernel_size, kernel_size)))
+        max_filter[:, :, ch] = cv2.dilate(image[:, :, ch], np.ones((kernel_size, kernel_size)))
+
+    xmv = np.maximum(max_filter - xmav, xmav - min_filter)
+    xmv[xmv == 0] = 1e-6
+
+    fuzzy = 1 - np.abs(image - xmav) / xmv
+    fuzzy = np.clip(fuzzy, 0, 1)
+
+    num = uniform_filter((fuzzy * image).astype(np.float32), size=(kernel_size, kernel_size, 1))
+    den = uniform_filter(fuzzy.astype(np.float32), size=(kernel_size, kernel_size, 1))
+
+    filtered = num / (den + 1e-6)
+    return np.clip(filtered, 0, 255).astype(np.uint8)
+
+
+def unsharp_mask(img, amount=1.7, blur=3):
+    blurred = cv2.GaussianBlur(img, (blur, blur), 0)
+    return cv2.addWeighted(img, 1 + amount, blurred, -amount, 0)
+
+
+def enhance_brightness_contrast(img, brightness=12, contrast=1.18):
+    return cv2.convertScaleAbs(img, alpha=contrast, beta=brightness)
+
+
+def detailed_sharpen(img):
+    kernel = np.array([[0, -1, 0],
+                       [-1, 7.5, -1],
+                       [0, -1, 0]])
+    return cv2.filter2D(img, -1, kernel)
+
+
+fuzzy_filtered = triangular_fuzzy_filter_fast(img_rgb, kernel_size=3)
+
+sharp1 = unsharp_mask(fuzzy_filtered, amount=1.7, blur=3)
+
+enhanced_bc = enhance_brightness_contrast(sharp1, brightness=8, contrast=1.18)
+
+final_output = detailed_sharpen(enhanced_bc)
+
+
+plt.figure(figsize=(12, 6))
+plt.subplot(1, 2, 1) 
+plt.imshow(img_rgb)
+plt.title("Original Image")
+plt.axis("off")
+
+plt.subplot(1, 2, 2)
+plt.imshow(final_output)
+plt.title("Enhanced + Sharpened Image")
+plt.axis("off")
+plt.tight_layout()
+plt.show()
+
+
+output_path = "enhanced_image_sharp.png"
+Image.fromarray(final_output).save(output_path)
+files.download(output_path)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import cv2
+import numpy as np
+from matplotlib import pyplot as plt
+from google.colab import files
+from PIL import Image
+
+# ================================
+# UPLOAD IMAGE
+# ================================
+uploaded = files.upload()
+img_path = list(uploaded.keys())[0]
+img = cv2.imread(img_path)
+img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+
+# =========================================================
+# 1. DEHAZE (CLAHE + visibility recovery)
+# =========================================================
+def dehaze(image):
+    hsv = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
+    h, s, v = cv2.split(hsv)
+
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
+    v = clahe.apply(v)
+
+    hsv = cv2.merge([h, s, v])
+    return cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)
+
+
+# =========================================================
+# 2. DETAIL ENHANCEMENT (clarity improvement)
+# =========================================================
+def detail_enhance(image):
+    return cv2.detailEnhance(image, sigma_s=12, sigma_r=0.2)
+
+
+# =========================================================
+# 3. UNSHARP MASK (high quality sharpening)
+# =========================================================
+def unsharp_mask(image, amount=1.6, threshold=3):
+    blurred = cv2.GaussianBlur(image, (9,9), 2)
+    sharpened = cv2.addWeighted(image, 1 + amount, blurred, -amount, 0)
+    return sharpened
+
+
+# =========================================================
+# 4. BILATERAL DENOISE (preserves edges)
+# =========================================================
+def smooth_edges(image):
+    return cv2.bilateralFilter(image, 9, 50, 50)
+
+
+# =========================================================
+# 5. FINAL PIPELINE
+# =========================================================
+print("Enhancing clarity...")
+
+step1 = dehaze(img)             # reduce fog/light glow
+step2 = detail_enhance(step1)   # bring out texture
+step3 = unsharp_mask(step2)     # refine edges
+final = smooth_edges(step3)     # clean noise, keep details
+
+
+# =========================================================
+# DISPLAY RESULT
+# =========================================================
+plt.figure(figsize=(12,6))
+
+plt.subplot(1,2,1)
+plt.imshow(img)
+plt.title("Original Image")
+plt.axis("off")
+
+plt.subplot(1,2,2)
+plt.imshow(final)
+plt.title("Enhanced Clarity")
+plt.axis("off")
+
+plt.show()
+
+
+# =========================================================
+# SAVE OUTPUT
+# =========================================================
+out_path = "clarified_image.png"
+Image.fromarray(final).save(out_path)
+files.download(out_path)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import cv2
+import numpy as np
+from matplotlib import pyplot as plt
+from PIL import Image
+from google.colab import files
+from scipy.ndimage import uniform_filter
+
+# ----------------------------------------
+# UPLOAD IMAGE
+# ----------------------------------------
+uploaded = files.upload()
+image_path = list(uploaded.keys())[0]
+
+img = cv2.imread(image_path)
+img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+
+# ----------------------------------------
+# FL-AMF : Fuzzy Adaptive Local Mean Filter
+# ----------------------------------------
+def FLAMF(image, kernel_size=3):
+    """
+    Fuzzy Adaptive Local Mean Filter (FL-AMF)
+    image       : RGB image
+    kernel_size : window size (3, 5, 7...)
+    """
+
+    img = image.astype(np.float32)
+
+    # ---- 1. Local Mean (m) ----
+    local_mean = uniform_filter(img, size=(kernel_size, kernel_size, 1))
+
+    # ---- 2. Local Variance (σ²) ----
+    local_mean_sq = uniform_filter(img * img, size=(kernel_size, kernel_size, 1))
+    local_var = local_mean_sq - (local_mean ** 2)
+    local_var = np.maximum(local_var, 1e-6)  # avoid zero/negative
+
+    # ---- 3. Fuzzy Membership (Gaussian type) ----
+    diff = np.abs(img - local_mean)
+    fuzzy = np.exp(-(diff * diff) / (local_var + 1e-6))
+
+    # ---- 4. Weighted mean ----
+    numerator = uniform_filter(fuzzy * img, size=(kernel_size, kernel_size, 1))
+    denominator = uniform_filter(fuzzy, size=(kernel_size, kernel_size, 1))
+
+    output = numerator / (denominator + 1e-6)
+    return np.clip(output, 0, 255).astype(np.uint8)
+
+
+# ----------------------------------------
+# UNSHARP MASK (Sharpening)
+# ----------------------------------------
+def unsharp_mask(img, amount=1.7, blur=3):
+    blurred = cv2.GaussianBlur(img, (blur, blur), 0)
+    return cv2.addWeighted(img, 1 + amount, blurred, -amount, 0)
+
+
+# ----------------------------------------
+# BRIGHTNESS + CONTRAST ENHANCEMENT
+# ----------------------------------------
+def enhance_brightness_contrast(img, brightness=12, contrast=1.18):
+    return cv2.convertScaleAbs(img, alpha=contrast, beta=brightness)
+
+
+# ----------------------------------------
+# FINAL SHARPENING (Detail Enhance)
+# ----------------------------------------
+def detailed_sharpen(img):
+    kernel = np.array([[0, -1, 0],
+                       [-1, 7.5, -1],
+                       [0, -1, 0]])
+    return cv2.filter2D(img, -1, kernel)
+
+
+# ----------------------------------------------------
+# APPLY FILTERS
+# ----------------------------------------------------
+print("Applying FL-AMF...")
+fuzzy_filtered = FLAMF(img_rgb, kernel_size=3)
+
+print("Applying Unsharp Mask...")
+sharp1 = unsharp_mask(fuzzy_filtered, amount=1.7, blur=3)
+
+print("Enhancing Brightness and Contrast...")
+enhanced_bc = enhance_brightness_contrast(sharp1, brightness=8, contrast=1.18)
+
+print("Applying Final Sharpen...")
+final_output = detailed_sharpen(enhanced_bc)
+
+
+# ----------------------------------------------------
+# SHOW RESULTS
+# ----------------------------------------------------
+plt.figure(figsize=(12, 6))
+
+plt.subplot(1, 2, 1)
+plt.imshow(img_rgb)
+plt.title("Original Image")
+plt.axis("off")
+
+plt.subplot(1, 2, 2)
+plt.imshow(final_output)
+plt.title("Enhanced Image (FL-AMF + Sharpen)")
+plt.axis("off")
+
+plt.tight_layout()
+plt.show()
+
+
+# ----------------------------------------------------
+# SAVE OUTPUT
+# ----------------------------------------------------
+output_path = "FLAMF_Enhanced_Image.png"
+Image.fromarray(final_output).save(output_path)
+
+print("Download Ready")
+files.download(output_path)
+
+
+
+
+
+
+
+
+
+
