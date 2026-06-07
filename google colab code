@@ -1,0 +1,80 @@
+import cv2
+import numpy as np
+from matplotlib import pyplot as plt
+from PIL import Image
+from google.colab import files
+from scipy.ndimage import uniform_filter
+
+uploaded = files.upload()
+image_path = list(uploaded.keys())[0]
+img = cv2.imread(image_path)
+img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+
+def triangular_fuzzy_filter_fast(image, kernel_size=3):
+    pad = kernel_size // 2
+
+    xmav = uniform_filter(image.astype(np.float32), size=(kernel_size, kernel_size, 1))
+
+    min_filter = np.zeros_like(image, dtype=np.float32)
+    max_filter = np.zeros_like(image, dtype=np.float32)
+
+    for ch in range(image.shape[2]):
+        min_filter[:, :, ch] = cv2.erode(image[:, :, ch], np.ones((kernel_size, kernel_size)))
+        max_filter[:, :, ch] = cv2.dilate(image[:, :, ch], np.ones((kernel_size, kernel_size)))
+
+    xmv = np.maximum(max_filter - xmav, xmav - min_filter)
+    xmv[xmv == 0] = 1e-6
+
+    fuzzy = 1 - np.abs(image - xmav) / xmv
+    fuzzy = np.clip(fuzzy, 0, 1)
+
+    num = uniform_filter((fuzzy * image).astype(np.float32), size=(kernel_size, kernel_size, 1))
+    den = uniform_filter(fuzzy.astype(np.float32), size=(kernel_size, kernel_size, 1))
+
+    filtered = num / (den + 1e-6)
+    return np.clip(filtered, 0, 255).astype(np.uint8)
+
+
+def unsharp_mask(img, amount=1.7, blur=3):
+    blurred = cv2.GaussianBlur(img, (blur, blur), 0)
+    return cv2.addWeighted(img, 1 + amount, blurred, -amount, 0)
+
+
+def enhance_brightness_contrast(img, brightness=8, contrast=1.18):
+    return cv2.convertScaleAbs(img, alpha=contrast, beta=brightness)
+
+
+def detailed_sharpen(img):
+    kernel = np.array([[0, -1, 0],
+                       [-1, 7.5, -1],
+                       [0, -1, 0]])
+    return cv2.filter2D(img, -1, kernel)
+
+
+fuzzy_filtered = triangular_fuzzy_filter_fast(img_rgb, kernel_size=3)
+
+sharp1 = unsharp_mask(fuzzy_filtered, amount=1.7, blur=3)
+
+enhanced_bc = enhance_brightness_contrast(sharp1, brightness=8, contrast=1.18)
+
+final_output = detailed_sharpen(enhanced_bc)
+
+
+plt.figure(figsize=(12, 6))
+plt.subplot(1, 2, 1)
+plt.imshow(img_rgb)
+plt.title("Original Image")
+plt.axis("off")
+
+plt.subplot(1, 2, 2)
+plt.imshow(final_output)
+plt.title("Enhanced Image")
+plt.axis("off")
+plt.tight_layout()
+plt.show()
+
+
+output_path = "enhanced_image_sharp.png"
+Image.fromarray(final_output).save(output_path)
+files.download(output_path)
